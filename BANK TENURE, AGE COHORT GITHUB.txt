@@ -1,0 +1,51 @@
+SELECT a.mo_id,
+       a.user_id,
+       a.user_name,
+       COALESCE(a.referrer_page, 'Unknown') AS referrer_page,
+       COALESCE(a.link_location, 'Unknown') AS link_location,
+       a.device_type,
+       a.card_type,
+       a.toggle_status,
+       a.transaction_control,
+       a.transaction_code,
+       COALESCE(d.active_user_indicator, 0) AS active_user_indicator,
+       
+       -- Age Calculation
+       CASE 
+           WHEN (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.birth_date) / 365) < 20 THEN '1. <=19'
+           WHEN (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.birth_date) / 365) >= 20 
+                AND (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.birth_date) / 365) < 40 THEN '2. 20-39'
+           WHEN (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.birth_date) / 365) >= 40 
+                AND (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.birth_date) / 365) < 60 THEN '3. 40-59'
+           ELSE 'Unknown'
+       END AS Age_Group,
+       
+       -- Bank Tenure Calculation
+       CASE 
+           WHEN (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.customer_since_date) / 30.42) < 4 THEN '1) <=3 Months'
+           WHEN (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.customer_since_date) / 30.42) >= 4 
+                AND (((ADD_MONTHS(CAST(((CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 1 FOR 4) AS NUMBER(4)) - 1900) * 10000 + (CAST(SUBSTRING(CAST(a.MO_ID AS VARCHAR(6)) FROM 5 FOR 2) AS NUMBER(4))) * 100 + 01) AS DATE FORMAT 'YYYY-MM-DD')), 1) - 1) - p.customer_since_date) / 30.42) < 7 THEN '2) 4-6 Months'
+           ELSE 'Unknown'
+       END AS Tenure_Group,
+       
+       -- State Mapping
+       CASE 
+           WHEN o.state_code IN ('AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY') THEN o.state_code
+           ELSE 'Other'
+       END AS State,
+       
+       a.sessions_count,
+       a.sessions_active
+FROM example_schema.user_activity a
+LEFT JOIN example_schema.user_digital_activity b ON a.user_id = b.user_id AND a.MO_ID = b.MO_ID
+LEFT JOIN example_schema.mobile_activity c ON a.user_id = c.user_id AND a.MO_ID = c.MO_ID
+LEFT JOIN example_schema.olb_activity d ON a.user_id = d.user_id AND a.MO_ID = d.MO_ID
+LEFT JOIN example_schema.user_profile m ON a.user_id = m.user_id
+LEFT JOIN example_schema.user_address n ON m.user_key = n.user_key AND n.expiry_date = '9999-12-31'
+LEFT JOIN example_schema.address_details o ON n.address_key = o.address_key
+LEFT JOIN (SELECT DISTINCT b.user_id,
+                      MAX(b.birth_date) AS birth_date,
+                      MIN(b.customer_since_date) AS customer_since_date
+           FROM example_schema.customer_details b
+           WHERE b.expiry_date = '9999-12-31'
+           GROUP BY 1) p ON a.user_id = p.user_id;
